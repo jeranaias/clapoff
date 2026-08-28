@@ -239,6 +239,35 @@ save a fingerprint built on that, because a direction gate fitted to noise would
 your real claps at random and you would never work out why. Desktop arrays, ReSpeakers
 and anything going through an audio interface generally do give you the real thing.
 
+## Knowing when not to
+
+A clap detector has no idea what you're doing. You could be presenting, in a call, or
+forty minutes into a boss fight, and three claps still means three claps. So before
+anything session-ending happens, clapoff asks Windows two questions:
+
+1. **Is something full screen, or has the shell been told to shut up?**
+   `SHQueryUserNotificationState` — the same call Windows itself uses to decide whether
+   popping a toast would be rude. If it's rude to interrupt you, it's ruder to power off.
+2. **Is another app holding the microphone?** This is the good one. If something else
+   has the mic open, you are almost certainly talking to a human being, and they will
+   notice you leave.
+
+```
+[14:32:08] not now - zoom.exe is using the microphone - you're probably talking to someone.
+[14:32:08] (clapoff --guards off if you disagree)
+```
+
+The mic check has a trap in it, and this project fell in it. Windows records a stop
+time when an app releases the microphone — but an app that *crashes* never writes one,
+and the zero sits in the registry forever. On the machine this was built on,
+`linguascope.exe` claimed the microphone and had not been running for who knows how
+long. As a default that would have blocked shutdown **permanently**, for a reason
+nobody would ever have guessed. So anything not in the live process list doesn't get a
+vote.
+
+Only session-ending actions are guarded — locking your screen goes through regardless.
+`--guards off` if you disagree with all of this.
+
 ## Does it actually work
 
 There is a test suite. It feeds synthetic audio through the detector, so it runs on

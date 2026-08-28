@@ -168,3 +168,25 @@ def test_an_unknown_rhythm_does_nothing(audio, spy, tmp_path):
     audio(sig)
     main(BASE + ["--config", str(tmp_path / "none.json")])
     assert done == []
+
+
+def test_a_guard_stops_the_shutdown(audio, spy, monkeypatch, tmp_path):
+    """Three claps, but you're in a call. Nothing happens."""
+    from clapoff import cli
+    from clapoff.cli import main
+    done, sent = spy
+    monkeypatch.setattr(cli.guards, "why_not_now", lambda *a, **k: "zoom.exe is using the microphone")
+    audio(even_triple())
+    main(BASE + ["--countdown", "0.2", "--config", str(tmp_path / "none.json")])
+    assert done == []
+    assert any("not now" in title for title, _ in sent)
+
+
+def test_guards_off_lets_it_through_anyway(audio, spy, monkeypatch, tmp_path):
+    from clapoff import cli
+    from clapoff.cli import main
+    done, _ = spy
+    monkeypatch.setattr(cli.guards, "why_not_now", lambda *a, **k: "you're in a call")
+    audio(even_triple())
+    main(BASE + ["--guards", "off", "--countdown", "0.2", "--config", str(tmp_path / "none.json")])
+    assert done == [("shutdown", None)]

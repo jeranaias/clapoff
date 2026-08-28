@@ -12,6 +12,7 @@ from . import __version__
 from .console import beep, drain_keys, key_pressed, say
 from .detector import BLOCK, SR, ClapDetector
 from .doa import DirectionGate, array_report, signature
+from . import guards
 from .loopback import LoopbackVeto
 from .notify import Notifier
 from .patterns import DEFAULT_TOLERANCE, Pattern, load, match_sequence, write_starter
@@ -73,6 +74,8 @@ def build_parser():
                    help="report rhythms and do absolutely nothing about them")
     p.add_argument("--dry-run", action="store_true",
                    help="the whole show, including the countdown, minus the ending")
+    p.add_argument("--guards", choices=["auto", "off"], default="auto",
+                   help="refuse to end your session mid-call or mid-game (default: auto)")
     p.add_argument("--notify", choices=["auto", "off"], default="auto",
                    help="put the countdown on the desktop too (default: auto)")
     p.add_argument("--no-banner", action="store_true", help="be boring")
@@ -291,6 +294,7 @@ def main(argv=None):
     print(f"  profile:  {profile_note}")
     print(f"  direction: {gate.status()}")
     print(f"  notices:  {notifier.status()}")
+    print(f"  guards:   {guards.status() if args.guards == 'auto' else 'off'}")
     print("  quit:     Ctrl+C\n")
     print_patterns(patterns, source)
 
@@ -346,6 +350,15 @@ def main(argv=None):
                     if args.listen:
                         beep(1200, 100)
                         say(f'*** that is "{matched.name}" - {matched.action} ***\n')
+                        continue
+                    # Session-ending actions ask the desktop's permission first.
+                    excuse = (guards.why_not_now()
+                              if args.guards == "auto" and matched.countdown else None)
+                    if excuse:
+                        beep(300, 200)
+                        say(f"not now - {excuse}.")
+                        say("(clapoff --guards off if you disagree)\n")
+                        notifier.send("clapoff: not now", excuse)
                         continue
                     if not matched.countdown:
                         perform(matched.action, matched.command, args.dry_run, say)

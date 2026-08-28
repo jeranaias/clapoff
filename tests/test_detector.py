@@ -602,3 +602,60 @@ class TestNotifier:
         assert n.send("a", "b") is False
         assert len(calls) == 1          # tried once, learned, stopped
         assert "wouldn't take them" in n.status()
+
+
+# --- knowing when not to ------------------------------------------------------
+
+class TestGuardStates:
+    def test_full_screen_and_presentations_block(self):
+        from clapoff import guards
+        assert guards.describe_state(guards.QUNS_RUNNING_D3D_FULL_SCREEN)
+        assert guards.describe_state(guards.QUNS_PRESENTATION_MODE)
+        assert guards.describe_state(guards.QUNS_BUSY)
+
+    def test_an_ordinary_desktop_does_not_block(self):
+        from clapoff import guards
+        assert guards.describe_state(5) is None      # QUNS_ACCEPTS_NOTIFICATIONS
+        assert guards.describe_state(None) is None
+
+    def test_other_platforms_say_so_rather_than_pretending(self):
+        from clapoff import guards
+        assert guards.why_not_now(system="Linux") is None
+        assert "nothing portable" in guards.status(system="Linux")
+
+
+class TestMicrophoneHolders:
+    entries = [("zoom.exe", 0), ("chrome.exe", 132000000), ("python.exe", 0)]
+
+    def test_an_app_still_holding_the_mic_is_reported(self):
+        from clapoff.guards import other_microphone_users
+        assert other_microphone_users(self.entries, "python.exe",
+                                      running={"zoom.exe", "python.exe"}) == ["zoom.exe"]
+
+    def test_we_do_not_count_ourselves(self):
+        from clapoff.guards import other_microphone_users
+        found = other_microphone_users(self.entries, r"C:\Python314\python.exe",
+                                       running={"python.exe"})
+        assert found == []
+
+    def test_an_app_that_let_go_is_not_reported(self):
+        from clapoff.guards import other_microphone_users
+        assert "chrome.exe" not in other_microphone_users(
+            self.entries, "python.exe", running={"chrome.exe", "python.exe"})
+
+    def test_a_crashed_app_does_not_block_forever(self):
+        """Measured for real: linguascope.exe claimed the mic and was not running.
+
+        Apps that crash never write a stop time, so the zero sits in the registry
+        permanently. Without this check the machine could never be clapped off
+        again, for a reason nobody would ever have guessed.
+        """
+        from clapoff.guards import other_microphone_users
+        stale = [("linguascope.exe", 0)]
+        assert other_microphone_users(stale, "python.exe", running={"python.exe"}) == []
+        assert other_microphone_users(stale, "python.exe", running=None) == ["linguascope.exe"]
+
+    def test_registry_paths_are_reduced_to_a_name(self):
+        from clapoff.guards import other_microphone_users
+        packed = [(r"C:#Program Files#Zoom#bin#zoom.exe", 0)]
+        assert other_microphone_users(packed, "python.exe", running={"zoom.exe"}) == ["zoom.exe"]
