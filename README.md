@@ -206,6 +206,39 @@ driver and strip speaker audio before it ever reaches us. If your machine does t
 this feature will look like it's doing nothing, because there's nothing left to do.
 It earns its keep on desktops and external mics, which don't get that for free.
 
+## Only claps from the couch
+
+With two or more *real* microphones you can tell where a clap came from. Sound takes
+about three samples per centimetre to cross from one capsule to the next, so
+cross-correlating the channels (GCC-PHAT, which keeps phase and throws away magnitude —
+exactly right for a broadband transient in a live room) gives you a delay fingerprint.
+Train the one from where you sit, and a clap from the TV can be ignored.
+
+```bash
+clapoff --check-array       # is my mic actually an array?
+clapoff --train-direction   # clap six times from your chair
+```
+
+**Check first, and expect bad news.** Most laptop "microphone arrays" beamform in the
+driver and hand you one processed mono stream copied across every channel. They look
+like arrays and contain no spatial information at all. Here's a real result, from the
+Intel Smart Sound array this was built on:
+
+```
+  ch0  rms 0.001219  reference
+  ch1  rms 0.001219  duplicate of ch0  corr vs ch0 +0.9998
+  ch2  rms 0.000015  silent
+  ch3  rms 0.000015  silent
+
+Not usable: the driver is beamforming for you - every channel is the same signal,
+so there's no direction left to recover.
+```
+
+Four channels, one microphone's worth of information. `--train-direction` refuses to
+save a fingerprint built on that, because a direction gate fitted to noise would reject
+your real claps at random and you would never work out why. Desktop arrays, ReSpeakers
+and anything going through an audio interface generally do give you the real thing.
+
 ## Does it actually work
 
 There is a test suite. It feeds synthetic audio through the detector, so it runs on

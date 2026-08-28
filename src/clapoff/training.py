@@ -17,6 +17,7 @@ from .detector import ClapDetector
 from .patterns import config_path
 
 FIELDS = ("hf_min", "ratio", "abs_min", "tolerance")
+LIST_FIELDS = ("direction",)
 MIN_SAMPLES = 5
 
 
@@ -115,6 +116,19 @@ def save(profile, path=None):
     return path
 
 
+def update(changes, path=None):
+    """Merge into whatever profile is already on disk, rather than flattening it."""
+    path = profile_path(path)
+    existing = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            existing = {}
+    existing.update(changes)
+    return save(existing, path)
+
+
 def load(path=None):
     """Read a profile. Returns (settings-or-None, note-for-the-human)."""
     path = profile_path(path)
@@ -123,8 +137,14 @@ def load(path=None):
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         settings = {k: float(data[k]) for k in FIELDS if k in data}
+        for k in LIST_FIELDS:
+            if isinstance(data.get(k), list):
+                settings[k] = [float(v) for v in data[k]]
         if not settings:
             return None, f"{path} has nothing usable in it"
-        return settings, f"trained on {data.get('samples', '?')} claps"
+        note = f"trained on {data.get('samples', '?')} claps"
+        if "direction" in settings:
+            note += ", plus a direction"
+        return settings, note
     except (OSError, ValueError, TypeError) as exc:
         return None, f"{path} is unreadable ({exc})"

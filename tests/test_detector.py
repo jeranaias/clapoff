@@ -459,3 +459,89 @@ class TestWinnow:
         from clapoff.training import winnow
         weird = [(0.01, 0.30, 5.0)] * 6
         assert len(winnow(weird)) == 6
+
+
+# --- direction of arrival ----------------------------------------------------
+
+class TestGccPhat:
+    """Delay estimation, checked against delays we introduced on purpose."""
+
+    def _burst(self, n=2048, seed=11):
+        return np.random.default_rng(seed).normal(0, 1, n)
+
+    @pytest.mark.parametrize("shift", [0, 1, 3, 7, -2, -5, -9])
+    def test_it_recovers_a_delay_we_put_there(self, shift):
+        from clapoff.doa import gcc_phat
+        src = self._burst()
+        a = np.roll(src, shift)
+        found, confidence = gcc_phat(a, src, max_shift=32)
+        assert found == shift
+        assert confidence > 5
+
+    def test_unrelated_noise_has_low_confidence(self):
+        from clapoff.doa import gcc_phat
+        a = self._burst(seed=1)
+        b = self._burst(seed=2)
+        _, sharp = gcc_phat(np.roll(a, 4), a, max_shift=32)
+        _, vague = gcc_phat(a, b, max_shift=32)
+        assert vague < sharp
+
+
+class TestSignature:
+    def test_a_fingerprint_is_one_delay_per_extra_channel(self):
+        from clapoff.doa import signature
+        src = np.random.default_rng(3).normal(0, 1, 2048)
+        frames = np.stack([src, np.roll(src, 4), np.roll(src, -3)], axis=1)
+        assert signature(frames) == [4, -3]
+
+    def test_mono_has_no_direction(self):
+        from clapoff.doa import signature
+        assert signature(np.zeros((512, 1))) == []
+
+
+class TestArrayReport:
+    """The probe that stops us pretending a beamformed laptop mic is an array."""
+
+    def test_it_spots_a_real_array(self):
+        from clapoff.doa import array_report
+        src = np.random.default_rng(4).normal(0, 0.1, 4096)
+        other = np.roll(src, 5) + np.random.default_rng(5).normal(0, 0.05, 4096)
+        report = array_report(np.stack([src, other], axis=1))
+        assert report["usable"] is True
+
+    def test_it_spots_a_driver_that_beamforms_for_you(self):
+        """Jesse's Intel array: ch0 and ch1 correlate at 1.0000, ch2/ch3 are silent."""
+        from clapoff.doa import array_report
+        src = np.random.default_rng(6).normal(0, 0.1, 4096)
+        dead = np.random.default_rng(7).normal(0, 1e-5, 4096)
+        report = array_report(np.stack([src, src.copy(), dead, dead.copy()], axis=1))
+        assert report["usable"] is False
+        assert "beamforming" in report["reason"]
+
+    def test_mono_is_honest_about_it(self):
+        from clapoff.doa import array_report
+        assert array_report(np.zeros((512, 1)))["usable"] is False
+
+
+class TestDirectionGate:
+    def test_untrained_accepts_everything(self):
+        from clapoff.doa import DirectionGate
+        gate = DirectionGate()
+        assert gate.active is False
+        assert gate.accepts([99, -99]) is True
+
+    def test_trained_accepts_its_own_direction(self):
+        from clapoff.doa import DirectionGate
+        gate = DirectionGate([4, -3], tolerance=2.0)
+        assert gate.accepts([4, -3]) is True
+        assert gate.accepts([5, -2]) is True          # you moved a bit; fine
+
+    def test_trained_rejects_the_television(self):
+        from clapoff.doa import DirectionGate
+        gate = DirectionGate([4, -3], tolerance=2.0)
+        assert gate.accepts([-6, 8]) is False
+
+    def test_a_changed_channel_count_does_not_start_lying(self):
+        from clapoff.doa import DirectionGate
+        gate = DirectionGate([4, -3])
+        assert gate.accepts([4]) is True

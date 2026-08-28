@@ -2,12 +2,16 @@
 
 import argparse
 import collections
+import statistics
 import sys
 import time
+
+import numpy as np
 
 from . import __version__
 from .console import beep, drain_keys, key_pressed, say
 from .detector import BLOCK, SR, ClapDetector
+from .doa import DirectionGate, array_report, signature
 from .loopback import LoopbackVeto
 from .patterns import DEFAULT_TOLERANCE, Pattern, load, match_sequence, write_starter
 from .power import perform
@@ -48,6 +52,12 @@ def build_parser():
     p.add_argument("--profile", default=None, help="path to a trained profile")
     p.add_argument("--no-profile", action="store_true",
                    help="ignore the trained profile and use the stock guesses")
+    p.add_argument("--check-array", action="store_true",
+                   help="find out whether your mic is a real array or four copies of one")
+    p.add_argument("--train-direction", action="store_true",
+                   help="learn where you sit, and ignore claps from anywhere else")
+    p.add_argument("--direction-tolerance", type=float, default=2.0,
+                   help="how far you may drift, in samples (default: 2)")
     p.add_argument("--patterns", action="store_true",
                    help="print the rhythms it is listening for, then leave")
     p.add_argument("--init-config", action="store_true",
@@ -86,9 +96,79 @@ def print_patterns(patterns, source):
     print()
 
 
-def open_mic(sd, device):
-    return sd.InputStream(samplerate=SR, blocksize=BLOCK, channels=1,
+def open_mic(sd, device, channels=1):
+    return sd.InputStream(samplerate=SR, blocksize=BLOCK, channels=channels,
                           dtype="float32", device=device)
+
+
+def channel_count(sd, device):
+    try:
+        info = sd.query_devices(device if device is not None else sd.default.device[0], "input")
+        return max(1, min(int(info["max_input_channels"]), 4))
+    except Exception:
+        return 1
+
+
+def run_check_array(sd, device):
+    """Tell the truth about the microphone before anyone builds on top of it."""
+    channels = channel_count(sd, device)
+    if channels < 2:
+        print("One channel. Nothing to compare it against, so no direction. That's fine.")
+        return 0
+    print(f"Listening on {channels} channels for two seconds. Make some noise.\n")
+    frames = []
+    with open_mic(sd, device, channels) as stream:
+        for _ in range(int(2.0 * SR / BLOCK)):
+            data, _ = stream.read(BLOCK)
+            frames.append(data)
+    report = array_report(np.concatenate(frames))
+    for entry in report["channels"]:
+        corr = f"  corr vs ch0 {entry['corr']:+.4f}" if "corr" in entry else ""
+        print(f"  ch{entry['channel']}  rms {entry['rms']:.6f}  {entry['verdict']}{corr}")
+    print()
+    if report["usable"]:
+        print(f"Usable: {report['reason']}. Run clapoff --train-direction.")
+        return 0
+    print(f"Not usable: {report['reason']}.")
+    print("Direction gating will stay off. Everything else works exactly as before.")
+    return 0
+
+
+def run_train_direction(args, sd, device):
+    """Learn the delay fingerprint of claps from where you actually sit."""
+    channels = channel_count(sd, device)
+    if channels < 2:
+        print("This microphone has one channel. There is no direction to learn.")
+        return 1
+
+    print(f"Clap six times from where you normally sit. Listening on {channels} channels.\n")
+    det = ClapDetector(sensitivity=2.0)
+    recent = collections.deque(maxlen=8)
+    prints = []
+    with open_mic(sd, device, channels) as stream:
+        start = time.monotonic()
+        while len(prints) < 6 and time.monotonic() - start < 90:
+            data, _ = stream.read(BLOCK)
+            recent.append(data)
+            event = det.feed(data[:, 0], time.monotonic())
+            if event is not None and event[0] == "clap" and len(recent) == recent.maxlen:
+                prints.append(signature(np.concatenate(recent)))
+                print(f"  got one - {len(prints)}/6  {prints[-1]}")
+
+    if len(prints) < 3:
+        print(f"\nOnly heard {len(prints)}. Try clapoff --listen first.")
+        return 1
+    reference = [round(statistics.median(p[j] for p in prints), 2)
+                 for j in range(len(prints[0]))]
+    check = array_report(np.concatenate(recent))
+    if not check["usable"]:
+        print(f"\nHeard you fine, but: {check['reason']}.")
+        print("Refusing to save a direction that would be built on noise.")
+        return 1
+    path = training.update({"direction": reference,
+                            "direction_tolerance": args.direction_tolerance}, args.profile)
+    print(f"\nYour direction is {reference}. Saved to {path}.")
+    return 0
 
 
 def run_training(args, sd, device):
@@ -156,6 +236,12 @@ def main(argv=None):
     if device is not None and device.isdigit():
         device = int(device)
 
+    if args.check_array:
+        return run_check_array(sd, device)
+
+    if args.train_direction:
+        return run_train_direction(args, sd, device)
+
     if args.train:
         return run_training(args, sd, device)
 
@@ -168,6 +254,8 @@ def main(argv=None):
     tolerance = settings.pop("tolerance", args.tolerance)
     if args.tolerance != DEFAULT_TOLERANCE:
         tolerance = args.tolerance
+    gate = DirectionGate(settings.pop("direction", None), args.direction_tolerance)
+    channels = channel_count(sd, device) if gate.active else 1
 
     det = ClapDetector(sensitivity=args.sensitivity, **settings)
     veto = LoopbackVeto(device=args.loopback_device)
@@ -197,20 +285,29 @@ def main(argv=None):
     print(f"  ears:     {info['name']}")
     print(f"  speakers: {veto.status()}")
     print(f"  profile:  {profile_note}")
+    print(f"  direction: {gate.status()}")
     print("  quit:     Ctrl+C\n")
     print_patterns(patterns, source)
 
     try:
-        with open_mic(sd, device) as stream:
+        recent = collections.deque(maxlen=8)     # ~128 ms of multichannel history
+        with open_mic(sd, device, channels) as stream:
             while True:
                 data, _ = stream.read(BLOCK)
                 now = time.monotonic()
+                if gate.active:
+                    recent.append(data)
                 event = det.feed(data[:, 0], now)
 
                 if event is not None:
                     kind, rms, hf, spike = event
                     if kind == "clap" and veto.blocks(now):
                         say("ignored - that came out of your own speakers")
+                        continue
+                    if (kind == "clap" and gate.active
+                            and len(recent) == recent.maxlen
+                            and not gate.accepts(signature(np.concatenate(recent)))):
+                        say("ignored - that clap came from somewhere else")
                         continue
                     if kind == "clap":
                         if pending is not None:      # a clap mid-countdown means stop
