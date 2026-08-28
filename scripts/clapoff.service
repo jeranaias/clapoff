@@ -1,0 +1,18 @@
+# systemd user service.
+#   mkdir -p ~/.config/systemd/user && cp scripts/clapoff.service ~/.config/systemd/user/
+#   systemctl --user enable --now clapoff
+#   journalctl --user -u clapoff -f     # watch it judge your every noise
+#
+# Note: `systemctl poweroff` from a user service normally works via polkit on a
+# local seat. If it doesn't on your box, that's your distro's opinion, not ours.
+[Unit]
+Description=clapoff - clap your hands, the computer turns off
+After=sound.target
+
+[Service]
+ExecStart=%h/.local/bin/clapoff --no-banner
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
