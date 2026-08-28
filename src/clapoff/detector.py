@@ -41,6 +41,15 @@ class ClapDetector:
         freqs = np.fft.rfftfreq(BLOCK, 1.0 / SR)
         self.hf_mask = freqs >= HF_CUT
 
+        # A microphone often emits digital silence for the first fraction of a
+        # second after the stream opens. That makes the rolling median ~0, and
+        # then ordinary room noise divides into it as a spike of six figures and
+        # trips the detector instantly. So the background can never fall below
+        # the HF energy of white noise at abs_min RMS - measured, not guessed.
+        probe = np.random.default_rng(0).normal(0, self.abs_min, BLOCK).astype(np.float32)
+        probe_spec = np.abs(np.fft.rfft(probe * np.hanning(BLOCK).astype(np.float32))) ** 2
+        self.bg_floor = float(probe_spec[self.hf_mask].sum())
+
         self.hist = collections.deque(maxlen=int(0.75 * SR / BLOCK))
         self.loud_run = 0
         self.last_clap_t = 0.0
@@ -60,7 +69,7 @@ class ClapDetector:
         if len(self.hist) < self.hist.maxlen:    # ~0.75 s of warm-up
             self.hist.append(hf_e)
             return None
-        bg = float(np.median(self.hist)) + EPS
+        bg = max(float(np.median(self.hist)), self.bg_floor) + EPS
         self.hist.append(hf_e)
 
         spike = hf_e / bg

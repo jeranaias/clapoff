@@ -125,3 +125,26 @@ def test_lower_sensitivity_hears_less():
 def test_claps_detected_across_volumes(level):
     sig = cat(room_tone(1.0), clap(level), room_tone(0.5))
     assert count(sig)[0] == 1
+
+
+# --- the mic-startup bug -----------------------------------------------------
+
+def test_digital_silence_at_startup_does_not_fire():
+    """Regression: a stream that opens with true zeros used to make the rolling
+    median ~0, so the first ordinary room noise read as a 300,000x spike and the
+    detector fired twice at an empty room."""
+    sig = np.concatenate([
+        np.zeros(int(SR * 1.0), dtype=np.float32),   # mic hasn't woken up yet
+        room_tone(3.0, level=0.015),                 # a normal, boring room
+    ])
+    assert count(sig)[0] == 0
+
+
+def test_real_claps_still_fire_after_a_silent_start():
+    """...and the floor must not deafen it once the room is actually running."""
+    sig = np.concatenate([
+        np.zeros(int(SR * 0.5), dtype=np.float32),
+        room_tone(1.0, level=0.015), clap(), room_tone(0.4, level=0.015),
+        clap(), room_tone(0.4, level=0.015), clap(), room_tone(0.5, level=0.015),
+    ])
+    assert count(sig)[0] == 3
