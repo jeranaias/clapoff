@@ -29,16 +29,21 @@ The power button is four feet away and I am not an animal.
   \___|_|\__,_| .__/ \___/|_| |_|
               |_|   clap. off. bye.
 
-  mode:    ARMED - this will really turn your computer off
-  ears:    Microphone Array (Intel Smart Sound)
-  trigger: 3 claps inside 2s
-  abort:   15s - clap once, or press any key
-  quit:    Ctrl+C
+  mode:     ARMED - this will really do the things below
+  ears:     Microphone Array (Intel Smart Sound)
+  speakers: watching "Speakers (Realtek Audio)"
+  quit:     Ctrl+C
 
-[14:32:07] clap 1/3   (rms 0.0412  hf 71%  spike 34x)
-[14:32:07] clap 2/3   (rms 0.0388  hf 68%  spike 29x)
-[14:32:08] clap 3/3   (rms 0.0455  hf 74%  spike 41x)
-[14:32:08] THAT'S 3. Powering off in 15s - clap or hit a key if you didn't mean it.
+  patterns from: built-in
+
+  shutdown  clap-clap-clap               shutdown  (with countdown)
+  sleep     clap-clap ... clap           sleep  (with countdown)
+  lock      clap ... clap-clap           lock
+
+[14:32:07] clap 1   (rms 0.0412  hf 71%  spike 34x)
+[14:32:07] clap 2   (rms 0.0388  hf 68%  spike 29x)
+[14:32:08] clap 3   (rms 0.0455  hf 74%  spike 41x)
+[14:32:08] THAT IS "shutdown". shutdown in 15s - clap or hit a key if you didn't mean it.
 [14:32:08]   ...15
 [14:32:09]   ...14
 [14:32:10]   ...13
@@ -77,12 +82,55 @@ point is that you are not at the keyboard, so the abort can't require the keyboa
 
 ```bash
 clapoff --dry-run          # the full performance, minus the ending
-clapoff --claps 4          # for people with loud lives
+clapoff --patterns         # what rhythms am I listening for again
+clapoff --claps 4          # forget rhythms, just make it four claps
 clapoff --sensitivity 1.5  # it's not hearing you
 clapoff --sensitivity 0.6  # it's hearing things that aren't there
 clapoff --list-devices     # every mic your machine admits to having
 clapoff --device 3         # use that one instead
 ```
+
+## Rhythm is a keyspace
+
+"Three claps in two seconds" is one bit of information, which is a waste of a
+perfectly good microphone. clapoff matches on the **ratios between the gaps**, so you
+get as many commands as you can be bothered to remember:
+
+| You clap | Ratio | It does |
+| --- | --- | --- |
+| `clap-clap-clap` | `1:1` | shutdown |
+| `clap-clap ... clap` | `1:2` | sleep |
+| `clap ... clap-clap` | `2:1` | lock the screen |
+
+Ratios are scale-free, so it works whether you clap it fast or slow — only the shape
+matters, and you're allowed to be about 30% sloppy about it (`--tolerance`). A rhythm
+ends when you stop clapping, not when a timer runs out, so `1:1` never fires early and
+steals a clap from `1:1:1`.
+
+This is also the cheapest false-positive fix going. A syncopated `1:2` is a much harder
+accident for a passing drum fill than "any three onsets in a row."
+
+Add your own:
+
+```bash
+clapoff --init-config      # writes a starter file, tells you where
+```
+
+```json
+{
+  "patterns": [
+    { "name": "shutdown",  "rhythm": "1,1",   "action": "shutdown" },
+    { "name": "lock",      "rhythm": "2,1",   "action": "lock" },
+    { "name": "pause",     "rhythm": "1,1,1", "action": "command",
+      "command": "playerctl play-pause" }
+  ]
+}
+```
+
+Actions are `shutdown`, `reboot`, `sleep`, `lock`, or `command` for anything else.
+The ones that end your session get the countdown; locking the screen doesn't, because
+the worst case there is that you press a key. Override per pattern with
+`"countdown": true`.
 
 ## Not falling for your own speakers
 
@@ -153,8 +201,10 @@ So instead:
 4. **Wait.** A real clap is gone in milliseconds. If the spike is still going 225 ms
    later, it was a chord, and the detection is taken back. You'll see it say
    `never mind` in the log, which is more grace than most software shows.
-5. **Count.** Three of those inside two seconds, spaced at least 120 ms apart so one
-   clap and its echo off your wall don't count as two.
+5. **Wait for the end.** A rhythm is over when you stop clapping. After 0.6 s of
+   silence, the gaps get normalised and compared against every pattern you've
+   configured. Onsets closer than 120 ms apart are one clap and its echo off your wall,
+   not two claps.
 
 ## Autostart
 

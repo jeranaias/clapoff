@@ -193,3 +193,121 @@ class TestLoopbackVeto:
         v = LoopbackVeto()
         v.activity.mark(10.0)          # even with a pop on the books
         assert v.blocks(10.05) is False  # ...it's off, so it stays out of the way
+
+
+# --- rhythm patterns ---------------------------------------------------------
+
+class TestRhythmMatching:
+    """Ratios, not absolute times. Clap it fast or slow, same pattern."""
+
+    def test_even_triple_matches_1_1(self):
+        from clapoff.patterns import matches
+        assert matches([0.30, 0.30], [1, 1]) is True
+
+    def test_the_same_rhythm_clapped_slowly_still_matches(self):
+        from clapoff.patterns import matches
+        assert matches([0.90, 0.90], [1, 1]) is True
+
+    def test_syncopation_is_a_different_key(self):
+        from clapoff.patterns import matches
+        assert matches([0.30, 0.60], [1, 2]) is True
+        assert matches([0.30, 0.60], [1, 1]) is False
+        assert matches([0.30, 0.30], [1, 2]) is False
+
+    def test_reversed_syncopation_is_yet_another(self):
+        from clapoff.patterns import matches
+        assert matches([0.60, 0.30], [2, 1]) is True
+        assert matches([0.60, 0.30], [1, 2]) is False
+
+    def test_human_sloppiness_is_forgiven(self):
+        from clapoff.patterns import matches
+        assert matches([0.28, 0.33], [1, 1]) is True      # nobody is a metronome
+
+    def test_wrong_number_of_claps_never_matches(self):
+        from clapoff.patterns import matches
+        assert matches([0.3, 0.3, 0.3], [1, 1]) is False
+        assert matches([], [1, 1]) is False
+
+
+class TestMatchSequence:
+    def test_it_picks_the_right_pattern_out_of_the_set(self):
+        from clapoff.patterns import DEFAULTS, match_sequence
+        assert match_sequence([0.0, 0.3, 0.6], DEFAULTS).name == "shutdown"
+        assert match_sequence([0.0, 0.3, 0.9], DEFAULTS).name == "sleep"
+        assert match_sequence([0.0, 0.6, 0.9], DEFAULTS).name == "lock"
+
+    def test_one_clap_is_not_a_rhythm(self):
+        from clapoff.patterns import DEFAULTS, match_sequence
+        assert match_sequence([0.0], DEFAULTS) is None
+        assert match_sequence([], DEFAULTS) is None
+
+    def test_gaps_that_are_too_long_are_two_events_not_a_rhythm(self):
+        from clapoff.patterns import DEFAULTS, match_sequence
+        assert match_sequence([0.0, 4.0, 8.0], DEFAULTS) is None
+
+    def test_gaps_that_are_too_short_are_one_clap_echoing(self):
+        from clapoff.patterns import DEFAULTS, match_sequence
+        assert match_sequence([0.0, 0.02, 0.04], DEFAULTS) is None
+
+    def test_an_unknown_rhythm_matches_nothing(self):
+        from clapoff.patterns import DEFAULTS, match_sequence
+        assert match_sequence([0.0, 0.2, 1.0], DEFAULTS) is None
+
+
+class TestPatternConfig:
+    def test_missing_config_falls_back_to_built_ins(self, tmp_path):
+        from clapoff.patterns import DEFAULTS, load
+        patterns, source = load(tmp_path / "nope.json")
+        assert [p.name for p in patterns] == [p.name for p in DEFAULTS]
+        assert source == "built-in"
+
+    def test_a_written_starter_reads_back(self, tmp_path):
+        from clapoff.patterns import load, write_starter
+        path = write_starter(tmp_path / "patterns.json")
+        patterns, source = load(path)
+        assert "shutdown" in [p.name for p in patterns]
+        assert source == str(path)
+
+    def test_garbage_config_does_not_take_the_app_down(self, tmp_path):
+        from clapoff.patterns import load
+        bad = tmp_path / "bad.json"
+        bad.write_text("{ this is not json", encoding="utf-8")
+        patterns, source = load(bad)
+        assert len(patterns) == 3            # quietly back to the built-ins
+        assert "unreadable" in source
+
+    def test_rhythm_accepts_however_you_felt_like_typing_it(self):
+        from clapoff.patterns import parse_rhythm
+        assert parse_rhythm("1,2") == [1.0, 2.0]
+        assert parse_rhythm("1:2") == [1.0, 2.0]
+        assert parse_rhythm([1, 2]) == [1.0, 2.0]
+
+    def test_destructive_actions_get_a_countdown_and_lock_does_not(self):
+        from clapoff.patterns import Pattern
+        assert Pattern("a", [1, 1], "shutdown").countdown is True
+        assert Pattern("b", [1, 1], "sleep").countdown is True
+        assert Pattern("c", [1, 1], "lock").countdown is False
+
+    def test_a_pattern_needs_at_least_two_claps(self):
+        import pytest as _pytest
+        from clapoff.patterns import Pattern
+        with _pytest.raises(ValueError):
+            Pattern("nope", [], "shutdown")
+
+
+class TestPowerActions:
+    def test_every_platform_knows_every_action(self):
+        from clapoff.power import COMMANDS
+        for system, actions in COMMANDS.items():
+            assert set(actions) == {"shutdown", "reboot", "sleep", "lock"}, system
+
+    def test_dry_run_never_actually_runs_anything(self):
+        from clapoff.power import perform
+        lines = []
+        assert perform("shutdown", dry_run=True, log=lines.append) is True
+        assert "DRY RUN" in lines[0]
+
+    def test_a_command_pattern_with_no_command_complains(self):
+        from clapoff.power import perform
+        lines = []
+        assert perform("command", None, dry_run=True, log=lines.append) is False
