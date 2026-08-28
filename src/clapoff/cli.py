@@ -11,6 +11,7 @@ from .detector import BLOCK, SR, ClapDetector
 from .loopback import LoopbackVeto
 from .patterns import DEFAULT_TOLERANCE, Pattern, load, match_sequence, write_starter
 from .power import perform
+from . import training
 
 BANNER = r"""
        _
@@ -42,6 +43,11 @@ def build_parser():
     p.add_argument("--device", default=None,
                    help="input device index or name; omit for the system default")
     p.add_argument("--config", default=None, help="path to a patterns file")
+    p.add_argument("--train", action="store_true",
+                   help="learn your clap and your room, and remember it")
+    p.add_argument("--profile", default=None, help="path to a trained profile")
+    p.add_argument("--no-profile", action="store_true",
+                   help="ignore the trained profile and use the stock guesses")
     p.add_argument("--patterns", action="store_true",
                    help="print the rhythms it is listening for, then leave")
     p.add_argument("--init-config", action="store_true",
@@ -80,6 +86,47 @@ def print_patterns(patterns, source):
     print()
 
 
+def open_mic(sd, device):
+    return sd.InputStream(samplerate=SR, blocksize=BLOCK, channels=1,
+                          dtype="float32", device=device)
+
+
+def run_training(args, sd, device):
+    """Ten claps for the thresholds, one rhythm for the timing."""
+    print("Right. Two short phases, then it stops guessing about you.\n")
+    try:
+        with open_mic(sd, device) as stream:
+            def read():
+                data, _ = stream.read(BLOCK)
+                return data[:, 0]
+
+            print("Phase 1 of 2 - clap ten times, normally, with a beat between each.")
+            samples, _ = training.collect(read, time.monotonic, want=10, timeout=90)
+            if len(samples) < training.MIN_SAMPLES:
+                print(f"\nOnly heard {len(samples)}. Either the mic is wrong or you gave up. "
+                      "Try clapoff --listen first.")
+                return 1
+
+            print("\nPhase 2 of 2 - clap an even three, clap-clap-clap, three times over.")
+            _, times = training.collect(read, time.monotonic, want=9, timeout=90)
+    except Exception as exc:
+        print(f"Training failed to open the microphone ({exc}).", file=sys.stderr)
+        return 2
+
+    gaps = [b - a for a, b in zip(times, times[1:]) if 0.10 <= b - a <= 1.50]
+    profile = training.fit(samples, gaps)
+    path = training.save(profile, args.profile)
+
+    print(f"\nLearned from {profile['samples']} claps and {len(gaps)} gaps:")
+    print(f"  brightness floor  hf_min    {profile['hf_min']}")
+    print(f"  spike threshold   ratio     {profile['ratio']}x over your background")
+    print(f"  quietest allowed  abs_min   {profile['abs_min']}")
+    if "tolerance" in profile:
+        print(f"  rhythm sloppiness tolerance {profile['tolerance']}")
+    print(f"\nSaved to {path}. It'll be used automatically from now on.")
+    return 0
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
 
@@ -109,7 +156,20 @@ def main(argv=None):
     if device is not None and device.isdigit():
         device = int(device)
 
-    det = ClapDetector(sensitivity=args.sensitivity)
+    if args.train:
+        return run_training(args, sd, device)
+
+    if args.no_profile:
+        learned, profile_note = None, "ignored with --no-profile"
+    else:
+        learned, profile_note = training.load(args.profile)
+    settings = dict(learned or {})
+    # An explicit --tolerance beats a learned one; otherwise the learned one wins.
+    tolerance = settings.pop("tolerance", args.tolerance)
+    if args.tolerance != DEFAULT_TOLERANCE:
+        tolerance = args.tolerance
+
+    det = ClapDetector(sensitivity=args.sensitivity, **settings)
     veto = LoopbackVeto(device=args.loopback_device)
     if args.loopback == "auto":
         veto.start(time.monotonic)
@@ -136,12 +196,12 @@ def main(argv=None):
     print(f"  mode:     {mode}")
     print(f"  ears:     {info['name']}")
     print(f"  speakers: {veto.status()}")
+    print(f"  profile:  {profile_note}")
     print("  quit:     Ctrl+C\n")
     print_patterns(patterns, source)
 
     try:
-        with sd.InputStream(samplerate=SR, blocksize=BLOCK, channels=1,
-                            dtype="float32", device=device) as stream:
+        with open_mic(sd, device) as stream:
             while True:
                 data, _ = stream.read(BLOCK)
                 now = time.monotonic()
@@ -176,7 +236,7 @@ def main(argv=None):
                     settle_at = None
                     heard = list(onsets)
                     onsets.clear()
-                    matched = match_sequence(heard, patterns, args.tolerance)
+                    matched = match_sequence(heard, patterns, tolerance)
                     if matched is None:
                         if len(heard) >= 2:
                             say(f"{len(heard)} claps, but not a rhythm I know. Try --patterns.\n")

@@ -311,3 +311,151 @@ class TestPowerActions:
         from clapoff.power import perform
         lines = []
         assert perform("command", None, dry_run=True, log=lines.append) is False
+
+
+# --- learning your clap ------------------------------------------------------
+
+class TestPercentile:
+    def test_it_agrees_with_arithmetic(self):
+        from clapoff.training import percentile
+        assert percentile([1, 2, 3, 4, 5], 0.0) == 1
+        assert percentile([1, 2, 3, 4, 5], 1.0) == 5
+        assert percentile([1, 2, 3, 4, 5], 0.5) == 3
+
+    def test_one_value_is_its_own_percentile(self):
+        from clapoff.training import percentile
+        assert percentile([7], 0.1) == 7
+
+
+class TestFit:
+    samples = [(0.05, 0.70, 30.0), (0.04, 0.65, 25.0), (0.06, 0.75, 40.0),
+               (0.03, 0.60, 20.0), (0.05, 0.68, 28.0), (0.04, 0.72, 33.0)]
+
+    def test_it_refuses_to_fit_three_claps(self):
+        import pytest as _pytest
+        from clapoff.training import fit
+        with _pytest.raises(ValueError):
+            fit(self.samples[:3])
+
+    def test_thresholds_land_below_the_weakest_clap(self):
+        """If the bar lands on the average, half your claps stop working."""
+        from clapoff.training import fit
+        p = fit(self.samples)
+        assert p["hf_min"] < min(s[1] for s in self.samples)
+        assert p["ratio"] < min(s[2] for s in self.samples)
+        assert p["abs_min"] < min(s[0] for s in self.samples)
+
+    def test_it_never_returns_something_absurd(self):
+        from clapoff.training import fit
+        wild = [(9.0, 1.0, 9e9)] * 6
+        p = fit(wild)
+        assert 0.15 <= p["hf_min"] <= 0.60
+        assert 0.002 <= p["abs_min"] <= 0.050
+        assert p["ratio"] >= 4.0
+
+    def test_a_steady_clapper_earns_a_tight_tolerance(self):
+        from clapoff.training import fit
+        steady = fit(self.samples, gaps=[0.30, 0.30, 0.31, 0.30])
+        sloppy = fit(self.samples, gaps=[0.20, 0.40, 0.25, 0.45])
+        assert steady["tolerance"] < sloppy["tolerance"]
+
+    def test_no_rhythm_means_no_learned_tolerance(self):
+        from clapoff.training import fit
+        assert "tolerance" not in fit(self.samples)
+
+
+class TestCollect:
+    def test_it_gathers_claps_from_a_fed_stream(self):
+        """The capture loop takes a reader, so it trains fine on fake audio."""
+        from clapoff.training import collect
+        sig = np.concatenate([room_tone(1.0)] + [
+            np.concatenate([clap(0.4), room_tone(0.35)]) for _ in range(8)])
+        blocks = [sig[i:i + BLOCK] for i in range(0, len(sig) - BLOCK, BLOCK)]
+        state = {"i": 0}
+
+        def read():
+            if state["i"] >= len(blocks):
+                return None
+            state["i"] += 1
+            return blocks[state["i"] - 1]
+
+        def clock():                      # time derived from stream position
+            return state["i"] * (BLOCK / SR)
+
+        samples, times = collect(read, clock, want=6, log=lambda *_: None)
+        assert len(samples) >= 5
+        assert len(times) == len(samples)
+        assert all(0.0 < hf <= 1.0 for _, hf, _ in samples)
+
+    def test_it_gives_up_when_the_stream_ends(self):
+        from clapoff.training import collect
+        samples, _ = collect(lambda: None, lambda: 0.0, want=10, log=lambda *_: None)
+        assert samples == []
+
+
+class TestProfileFile:
+    def test_save_then_load_round_trips(self, tmp_path):
+        from clapoff.training import load, save
+        path = save({"hf_min": 0.4, "ratio": 12.0, "abs_min": 0.01, "samples": 10},
+                    tmp_path / "p.json")
+        settings, note = load(path)
+        assert settings == {"hf_min": 0.4, "ratio": 12.0, "abs_min": 0.01}
+        assert "10 claps" in note
+
+    def test_no_profile_says_so_politely(self, tmp_path):
+        from clapoff.training import load
+        settings, note = load(tmp_path / "absent.json")
+        assert settings is None and "untrained" in note
+
+    def test_garbage_profile_does_not_take_the_app_down(self, tmp_path):
+        from clapoff.training import load
+        bad = tmp_path / "bad.json"
+        bad.write_text("not json at all", encoding="utf-8")
+        settings, note = load(bad)
+        assert settings is None and "unreadable" in note
+
+
+class TestProfileActuallyChangesBehaviour:
+    def test_a_learned_profile_can_hear_a_clap_the_defaults_miss(self):
+        """A soft clap in a bright room: stock thresholds reject it, yours don't."""
+        soft = np.concatenate([room_tone(1.0), clap(0.02), room_tone(0.5)])
+        stock = count(soft)[0]
+        det = ClapDetector(hf_min=0.20, ratio=4.0, abs_min=0.002)
+        trained = 0
+        now = 0.0
+        for i in range(0, len(soft) - BLOCK, BLOCK):
+            now += BLOCK / SR
+            ev = det.feed(soft[i:i + BLOCK], now)
+            if ev and ev[0] == "clap":
+                trained += 1
+        assert trained > stock
+
+
+class TestWinnow:
+    """Training listens permissively, so junk gets in. It must not survive."""
+
+    good = [(0.05, 0.70, 30.0), (0.04, 0.65, 25.0), (0.06, 0.75, 40.0),
+            (0.03, 0.60, 20.0), (0.05, 0.68, 28.0), (0.04, 0.72, 33.0)]
+    junk = [(0.009, 0.28, 5.0), (0.010, 0.30, 6.0)]     # a chair, a cough
+
+    def test_junk_is_dropped(self):
+        from clapoff.training import winnow
+        assert len(winnow(self.good + self.junk)) == len(self.good)
+
+    def test_good_claps_all_survive(self):
+        from clapoff.training import winnow
+        assert len(winnow(self.good)) == len(self.good)
+
+    def test_a_polluted_batch_fits_almost_the_same_as_a_clean_one(self):
+        from clapoff.training import fit
+        clean = fit(self.good)
+        dirty = fit(self.good + self.junk)
+        assert dirty["hf_min"] == clean["hf_min"]
+        assert dirty["ratio"] == clean["ratio"]
+        assert dirty["discarded"] == 2
+
+    def test_it_refuses_to_throw_away_everything(self):
+        """If the whole batch looks odd, that's your clap, not an outlier."""
+        from clapoff.training import winnow
+        weird = [(0.01, 0.30, 5.0)] * 6
+        assert len(winnow(weird)) == 6

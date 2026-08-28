@@ -30,9 +30,11 @@ class ClapDetector:
     clap, it was a chord, and we take the detection back.
     """
 
-    def __init__(self, sensitivity=1.0, hf_min=0.25):
-        self.ratio = 8.0 / sensitivity      # HF spike must beat the background by this
-        self.abs_min = 0.008 / sensitivity  # ...and clear this absolute RMS
+    def __init__(self, sensitivity=1.0, hf_min=0.25, ratio=None, abs_min=None):
+        # The defaults are a guess about a generic room. A trained profile passes
+        # measured numbers in here instead, which is strictly better than a guess.
+        self.ratio = 8.0 / sensitivity if ratio is None else ratio
+        self.abs_min = 0.008 / sensitivity if abs_min is None else abs_min
         self.hf_min = hf_min                # fraction of block energy above HF_CUT
         self.refractory = 0.12              # s - one clap, not its echo
         self.max_loud_blocks = 14           # ~225 ms; longer than this isn't a clap

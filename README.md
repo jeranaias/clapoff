@@ -132,6 +132,44 @@ The ones that end your session get the countdown; locking the screen doesn't, be
 the worst case there is that you press a key. Override per pattern with
 `"countdown": true`.
 
+## Teaching it your clap
+
+The stock thresholds describe a generic clap in a generic room, which is to say
+nobody's clap in nobody's room. Two minutes fixes that:
+
+```bash
+clapoff --train
+```
+
+Phase one: clap ten times. Phase two: clap an even `clap-clap-clap` three times over.
+It measures how bright your hands actually are, how far above *your* background they
+land, and how sloppy your sense of rhythm honestly is — then writes all of that to a
+profile it loads automatically from then on.
+
+```
+Learned from 10 claps (2 discarded as not-a-clap) and 6 gaps:
+  brightness floor  hf_min    0.412
+  spike threshold   ratio     11.4x over your background
+  quietest allowed  abs_min   0.00631
+  rhythm sloppiness tolerance 0.187
+```
+
+Training listens *permissively* on purpose — a missed example costs more than a
+spurious one. Which does mean a chair scrape can sneak into the batch, and since the
+thresholds are anchored on your **weakest** clap rather than your average one, a single
+piece of junk would drag the bar down and leave you with a hair trigger. So anything
+far below the median of the batch gets thrown out first, and it tells you how many.
+
+The header always says which it's using:
+
+```
+  profile:  trained on 10 claps
+  profile:  untrained (run: clapoff --train)
+```
+
+`--no-profile` goes back to the factory guesses. `--tolerance` still wins over the
+learned one if you pass it explicitly.
+
 ## Not falling for your own speakers
 
 The detector cannot tell a hi-hat from a clap, because acoustically there is barely a
