@@ -169,6 +169,14 @@ try `--list-devices` and pick the right one with `--device`. If you see
 `never mind`, your claps are being retracted as sustained noise, which means you
 live somewhere very reverberant. Try `--sensitivity 1.5`.
 
+**`clapoff: command not found`**
+pip put the console script somewhere your `PATH` doesn't know about - very common on
+Windows. Everything still works, just say it the long way:
+
+```bash
+python -m clapoff.cli --listen
+```
+
 **How do I uninstall it?**
 `pip uninstall clapoff`. You will have to type that. With your hands. The same hands.
 
