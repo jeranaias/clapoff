@@ -13,6 +13,7 @@ from .console import beep, drain_keys, key_pressed, say
 from .detector import BLOCK, SR, ClapDetector
 from .doa import DirectionGate, array_report, signature
 from .loopback import LoopbackVeto
+from .notify import Notifier
 from .patterns import DEFAULT_TOLERANCE, Pattern, load, match_sequence, write_starter
 from .power import perform
 from . import training
@@ -72,6 +73,8 @@ def build_parser():
                    help="report rhythms and do absolutely nothing about them")
     p.add_argument("--dry-run", action="store_true",
                    help="the whole show, including the countdown, minus the ending")
+    p.add_argument("--notify", choices=["auto", "off"], default="auto",
+                   help="put the countdown on the desktop too (default: auto)")
     p.add_argument("--no-banner", action="store_true", help="be boring")
     p.add_argument("--version", action="version", version=f"clapoff {__version__}")
     return p
@@ -258,6 +261,7 @@ def main(argv=None):
     channels = channel_count(sd, device) if gate.active else 1
 
     det = ClapDetector(sensitivity=args.sensitivity, **settings)
+    notifier = Notifier(enabled=args.notify == "auto" and not args.listen)
     veto = LoopbackVeto(device=args.loopback_device)
     if args.loopback == "auto":
         veto.start(time.monotonic)
@@ -286,6 +290,7 @@ def main(argv=None):
     print(f"  speakers: {veto.status()}")
     print(f"  profile:  {profile_note}")
     print(f"  direction: {gate.status()}")
+    print(f"  notices:  {notifier.status()}")
     print("  quit:     Ctrl+C\n")
     print_patterns(patterns, source)
 
@@ -352,6 +357,9 @@ def main(argv=None):
                     drain_keys()
                     say(f'THAT IS "{matched.name}". {matched.action} in {args.countdown:g}s '
                         "- clap or hit a key if you didn't mean it.")
+                    notifier.send(
+                        f"clapoff: {matched.action} in {args.countdown:g}s",
+                        "Clap once to cancel. Hidden mode has no keyboard.")
 
                 if pending is not None:
                     if key_pressed():

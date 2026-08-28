@@ -545,3 +545,60 @@ class TestDirectionGate:
         from clapoff.doa import DirectionGate
         gate = DirectionGate([4, -3])
         assert gate.accepts([4]) is True
+
+
+# --- desktop notifications ---------------------------------------------------
+
+class TestNotifyCommands:
+    def test_every_platform_we_claim_produces_a_command(self):
+        from clapoff.notify import command_for
+        for system in ("Windows", "Darwin", "Linux"):
+            assert command_for("t", "b", system=system)
+
+    def test_an_unknown_platform_gets_nothing_rather_than_a_guess(self):
+        from clapoff.notify import command_for
+        assert command_for("t", "b", system="Plan 9") is None
+
+    def test_windows_uses_windows_powershell_not_pwsh(self):
+        """PowerShell 7 usually can't load the WinRT toast types."""
+        from clapoff.notify import command_for
+        assert command_for("t", "b", system="Windows")[0] == "powershell.exe"
+
+    def test_quotes_in_a_message_cannot_break_out_of_the_script(self):
+        from clapoff.notify import command_for
+        argv = command_for("it's", "don't", system="Windows")
+        script = argv[-1]
+        assert "it''s" in script and "don''t" in script
+
+    def test_the_body_reaches_the_mac_command(self):
+        from clapoff.notify import command_for
+        assert "shutting down" in command_for("clapoff", "shutting down", system="Darwin")[-1]
+
+
+class TestNotifier:
+    def test_it_sends(self):
+        from clapoff.notify import Notifier
+        sent = []
+        n = Notifier(spawn=sent.append)
+        assert n.send("a", "b") is True
+        assert len(sent) == 1
+
+    def test_disabled_sends_nothing(self):
+        from clapoff.notify import Notifier
+        sent = []
+        assert Notifier(enabled=False, spawn=sent.append).send("a", "b") is False
+        assert sent == []
+
+    def test_a_box_with_no_notifier_gives_up_instead_of_retrying_forever(self):
+        from clapoff.notify import Notifier
+        calls = []
+
+        def boom(argv):
+            calls.append(argv)
+            raise OSError("notify-send: not found")
+
+        n = Notifier(spawn=boom)
+        assert n.send("a", "b") is False
+        assert n.send("a", "b") is False
+        assert len(calls) == 1          # tried once, learned, stopped
+        assert "wouldn't take them" in n.status()

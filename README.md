@@ -242,7 +242,9 @@ and anything going through an audio interface generally do give you the real thi
 ## Does it actually work
 
 There is a test suite. It feeds synthetic audio through the detector, so it runs on
-CI machines that have never heard a sound in their lives.
+CI machines that have never heard a sound in their lives. Six of the tests go further
+and hand `main()` a **fake microphone** playing synthetic claps, so the whole path —
+detect, match the rhythm, count down, act — is exercised without hardware or hands.
 
 | It must hear | It must ignore |
 | --- | --- |
@@ -250,6 +252,7 @@ CI machines that have never heard a sound in their lives.
 | ✅ quiet claps from across the room | 🚫 doors, footsteps, dropped books |
 | ✅ **claps while music is playing** | 🚫 silence (a surprisingly real failure mode) |
 | ✅ claps from very quiet to very loud | 🚫 shouting, TV, anything that sustains |
+| ✅ the whole app, end to end, on a fake mic | 🚫 anything your own speakers just played |
 
 ```bash
 pip install -e ".[dev]" && pytest
@@ -297,8 +300,21 @@ systemctl --user enable --now clapoff
 cp scripts/com.clapoff.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.clapoff.plist
 ```
 
-⚠️ Running hidden means no console, which means **no keyboard abort**. Clap-to-abort
-still works. Choose your countdown accordingly.
+Running hidden means no console, so the countdown goes to the **desktop** instead —
+a notification when it starts and another if you cancel it. Fifteen seconds of
+unexplained beeping isn't a warning, it's a haunting.
+
+| Platform | How |
+| --- | --- |
+| Windows | WinRT toast via `powershell.exe` (not `pwsh` — PowerShell 7 can't load those types) |
+| macOS | `osascript display notification` |
+| Linux | `notify-send` |
+
+If the desktop won't take them, it stops trying and says so in the header rather than
+retrying forever. `--notify off` if you'd rather it kept quiet.
+
+⚠️ Hidden also means **no keyboard abort** — clap-to-abort is the only one. Choose your
+countdown accordingly.
 
 ## FAQ
 
