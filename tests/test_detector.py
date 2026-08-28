@@ -659,3 +659,39 @@ class TestMicrophoneHolders:
         from clapoff.guards import other_microphone_users
         packed = [(r"C:#Program Files#Zoom#bin#zoom.exe", 0)]
         assert other_microphone_users(packed, "python.exe", running={"zoom.exe"}) == ["zoom.exe"]
+
+
+# --- the tray icon -----------------------------------------------------------
+
+class TestTray:
+    def test_disabled_stays_out_of_the_way(self):
+        from clapoff.tray import Tray
+        t = Tray(enabled=False)
+        assert t.start() is False
+        assert t.available is False
+        assert t.paused is False
+        t.set_state("countdown")          # must not explode with no icon
+        t.stop()
+
+    def test_pausing_flips_the_flag_and_the_colour(self):
+        from clapoff.tray import Tray
+        t = Tray(enabled=False)
+        t._toggle()
+        assert t.paused is True
+        t._toggle()
+        assert t.paused is False
+
+    def test_quitting_asks_the_loop_to_stop(self):
+        from clapoff.tray import Tray
+        t = Tray(enabled=False)
+        assert t.quit_requested is False
+        t._quit()
+        assert t.quit_requested is True
+
+    def test_every_state_has_a_colour(self):
+        from clapoff.tray import COLOURS
+        assert set(COLOURS) == {"listening", "heard", "countdown", "paused"}
+
+    def test_status_explains_itself(self):
+        from clapoff.tray import Tray
+        assert "off - " in Tray(enabled=False).status()

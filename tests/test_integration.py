@@ -190,3 +190,36 @@ def test_guards_off_lets_it_through_anyway(audio, spy, monkeypatch, tmp_path):
     audio(even_triple())
     main(BASE + ["--guards", "off", "--countdown", "0.2", "--config", str(tmp_path / "none.json")])
     assert done == [("shutdown", None)]
+
+
+def test_a_paused_tray_ignores_you_completely(audio, spy, monkeypatch, tmp_path):
+    """Pause is the whole point of the tray: applaud something without consequences."""
+    from clapoff import cli
+    from clapoff.cli import main
+    done, _ = spy
+
+    class Paused(cli.Tray):
+        def __init__(self, enabled=True):
+            super().__init__(enabled=False)
+            self.paused = True
+
+    monkeypatch.setattr(cli, "Tray", Paused)
+    audio(even_triple())
+    main(BASE + ["--tray", "--countdown", "0.2", "--config", str(tmp_path / "none.json")])
+    assert done == []
+
+
+def test_quitting_from_the_tray_ends_the_loop(audio, spy, monkeypatch, tmp_path):
+    from clapoff import cli
+    from clapoff.cli import main
+    done, _ = spy
+
+    class Quitter(cli.Tray):
+        def __init__(self, enabled=True):
+            super().__init__(enabled=False)
+            self.quit_requested = True
+
+    monkeypatch.setattr(cli, "Tray", Quitter)
+    audio(even_triple())
+    assert main(BASE + ["--tray", "--config", str(tmp_path / "none.json")]) == 0
+    assert done == []

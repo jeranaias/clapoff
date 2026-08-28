@@ -55,6 +55,20 @@ The power button is four feet away and I am not an animal.
 pip install git+https://github.com/jeranaias/clapoff
 ```
 
+Not on PyPI yet — the release machinery is built and waiting on a trusted publisher,
+see [`packaging/`](packaging/) for the honest state of every install channel.
+
+The optional extras, which everything degrades politely without:
+
+```bash
+pip install "clapoff[all] @ git+https://github.com/jeranaias/clapoff"
+```
+
+| Extra | Gets you |
+| --- | --- |
+| `loopback` | ignoring anything your own speakers played |
+| `tray` | a dot in the system tray you can pause from |
+
 On bare Linux you may also need the audio backend, because Linux:
 
 ```bash
@@ -308,6 +322,20 @@ So instead:
    silence, the gaps get normalised and compared against every pattern you've
    configured. Onsets closer than 120 ms apart are one clap and its echo off your wall,
    not two claps.
+
+## A dot in the tray
+
+Running hidden solves the no-console problem by removing the console, which also
+removes every sign the program exists.
+
+```bash
+pip install "clapoff[tray]"
+clapoff --tray
+```
+
+A coloured dot: 🟢 listening, 🟡 that was a clap, 🔴 something is about to happen,
+⚪ paused. Right-click to pause — for when you're about to applaud something — or to
+quit without going through Task Manager.
 
 ## Autostart
 

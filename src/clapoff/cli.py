@@ -15,6 +15,7 @@ from .doa import DirectionGate, array_report, signature
 from . import guards
 from .loopback import LoopbackVeto
 from .notify import Notifier
+from .tray import Tray
 from .patterns import DEFAULT_TOLERANCE, Pattern, load, match_sequence, write_starter
 from .power import perform
 from . import training
@@ -78,6 +79,8 @@ def build_parser():
                    help="refuse to end your session mid-call or mid-game (default: auto)")
     p.add_argument("--notify", choices=["auto", "off"], default="auto",
                    help="put the countdown on the desktop too (default: auto)")
+    p.add_argument("--tray", action="store_true",
+                   help="show a tray icon you can pause and quit from")
     p.add_argument("--no-banner", action="store_true", help="be boring")
     p.add_argument("--version", action="version", version=f"clapoff {__version__}")
     return p
@@ -265,6 +268,8 @@ def main(argv=None):
 
     det = ClapDetector(sensitivity=args.sensitivity, **settings)
     notifier = Notifier(enabled=args.notify == "auto" and not args.listen)
+    tray = Tray(enabled=args.tray)
+    tray.start()
     veto = LoopbackVeto(device=args.loopback_device)
     if args.loopback == "auto":
         veto.start(time.monotonic)
@@ -295,6 +300,7 @@ def main(argv=None):
     print(f"  direction: {gate.status()}")
     print(f"  notices:  {notifier.status()}")
     print(f"  guards:   {guards.status() if args.guards == 'auto' else 'off'}")
+    print(f"  tray:     {tray.status()}")
     print("  quit:     Ctrl+C\n")
     print_patterns(patterns, source)
 
@@ -304,6 +310,11 @@ def main(argv=None):
             while True:
                 data, _ = stream.read(BLOCK)
                 now = time.monotonic()
+                if tray.quit_requested:
+                    print("\nQuit from the tray. Goodbye.")
+                    break
+                if tray.paused:
+                    continue
                 if gate.active:
                     recent.append(data)
                 event = det.feed(data[:, 0], now)
@@ -328,6 +339,7 @@ def main(argv=None):
                             continue
                         onsets.append(now)
                         settle_at = now + args.settle
+                        tray.set_state("heard")
                         say(f"clap {len(onsets)}   (rms {rms:.4f}  hf {hf:.0%}  spike {spike:.0f}x)")
                     else:
                         if onsets:
@@ -342,6 +354,7 @@ def main(argv=None):
                     settle_at = None
                     heard = list(onsets)
                     onsets.clear()
+                    tray.set_state("listening")
                     matched = match_sequence(heard, patterns, tolerance)
                     if matched is None:
                         if len(heard) >= 2:
@@ -365,6 +378,7 @@ def main(argv=None):
                         print()
                         continue
                     pending = matched
+                    tray.set_state("countdown")
                     deadline = now + args.countdown
                     next_tick = now
                     drain_keys()
@@ -394,6 +408,7 @@ def main(argv=None):
         print("\nFine. Use the button like everyone else.")
     finally:
         veto.stop()
+        tray.stop()
     return 0
 
 

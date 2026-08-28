@@ -27,7 +27,9 @@ dependencies = ["numpy>=1.21", "sounddevice>=0.4"]
 
 [project.optional-dependencies]
 loopback = ["soundcard>=0.4"]
-dev = ["pytest>=7", "soundcard>=0.4"]
+tray = ["pystray>=0.19", "pillow>=9"]
+all = ["soundcard>=0.4", "pystray>=0.19", "pillow>=9"]
+dev = ["pytest>=7", "soundcard>=0.4", "pystray>=0.19", "pillow>=9"]
 
 [project.urls]
 Homepage = "https://github.com/jeranaias/clapoff"
