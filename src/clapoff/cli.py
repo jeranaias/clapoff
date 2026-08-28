@@ -8,6 +8,7 @@ import time
 from . import __version__
 from .console import beep, drain_keys, key_pressed, say
 from .detector import BLOCK, SR, ClapDetector
+from .loopback import LoopbackVeto
 from .power import shutdown
 
 BANNER = r"""
@@ -41,6 +42,10 @@ def build_parser():
                    help="report claps and shut down absolutely nothing")
     p.add_argument("--dry-run", action="store_true",
                    help="the whole show, including the countdown, minus the shutdown")
+    p.add_argument("--loopback", choices=["auto", "off"], default="auto",
+                   help="watch your own speakers so music can't trigger it (default: auto)")
+    p.add_argument("--loopback-device", default=None,
+                   help="name of the output device to watch; omit for the default speaker")
     p.add_argument("--no-banner", action="store_true", help="be boring")
     p.add_argument("--version", action="version", version=f"clapoff {__version__}")
     return p
@@ -65,6 +70,11 @@ def main(argv=None):
         device = int(device)
 
     det = ClapDetector(sensitivity=args.sensitivity)
+    veto = LoopbackVeto(device=args.loopback_device)
+    if args.loopback == "auto":
+        veto.start(time.monotonic)
+    else:
+        veto.reason = "disabled with --loopback off"
     hits = collections.deque()
     counting_down = False
     deadline = next_tick = 0.0
@@ -83,6 +93,7 @@ def main(argv=None):
             "ARMED - this will really turn your computer off")
     print(f"  mode:    {mode}")
     print(f"  ears:    {info['name']}")
+    print(f"  speakers: {veto.status()}")
     print(f"  trigger: {args.claps} claps inside {args.window:g}s")
     print(f"  abort:   {args.countdown:g}s - clap once, or press any key")
     print("  quit:    Ctrl+C\n")
@@ -97,6 +108,9 @@ def main(argv=None):
 
                 if event is not None:
                     kind, rms, hf, spike = event
+                    if kind == "clap" and veto.blocks(now):
+                        say("ignored - that came out of your own speakers")
+                        continue
                     if kind == "clap":
                         hits.append(now)
                         say(f"clap {len(hits)}/{args.claps}   "

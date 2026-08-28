@@ -26,7 +26,8 @@ classifiers = [
 dependencies = ["numpy>=1.21", "sounddevice>=0.4"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+loopback = ["soundcard>=0.4"]
+dev = ["pytest>=7", "soundcard>=0.4"]
 
 [project.urls]
 Homepage = "https://github.com/jeranaias/clapoff"

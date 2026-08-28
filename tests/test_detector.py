@@ -148,3 +148,48 @@ def test_real_claps_still_fire_after_a_silent_start():
         clap(), room_tone(0.4, level=0.015), clap(), room_tone(0.5, level=0.015),
     ])
     assert count(sig)[0] == 3
+
+
+# --- the speaker veto --------------------------------------------------------
+
+class TestSpeakerActivity:
+    """The bookkeeping half of the loopback veto, which is the testable half."""
+
+    def test_a_fresh_pop_blocks(self):
+        from clapoff.loopback import SpeakerActivity
+        a = SpeakerActivity(hold=0.25)
+        a.mark(10.0)
+        assert a.blocks(10.05) is True
+
+    def test_an_old_pop_does_not(self):
+        from clapoff.loopback import SpeakerActivity
+        a = SpeakerActivity(hold=0.25)
+        a.mark(10.0)
+        assert a.blocks(10.5) is False
+
+    def test_the_future_does_not_block(self):
+        from clapoff.loopback import SpeakerActivity
+        a = SpeakerActivity(hold=0.25)
+        a.mark(10.0)
+        assert a.blocks(9.9) is False
+
+    def test_silence_blocks_nothing(self):
+        from clapoff.loopback import SpeakerActivity
+        assert SpeakerActivity().blocks(1.0) is False
+
+
+class TestLoopbackVeto:
+    def test_it_fails_politely_without_a_device(self):
+        """No speakers, no soundcard, no problem - it must not take the app down."""
+        from clapoff.loopback import LoopbackVeto
+        v = LoopbackVeto(device="a device that does not exist anywhere")
+        v.start(lambda: 0.0)
+        assert v.available is False
+        assert v.blocks(1.0) is False
+        assert "off - " in v.status()
+
+    def test_an_unavailable_veto_never_vetoes(self):
+        from clapoff.loopback import LoopbackVeto
+        v = LoopbackVeto()
+        v.activity.mark(10.0)          # even with a pop on the books
+        assert v.blocks(10.05) is False  # ...it's off, so it stays out of the way

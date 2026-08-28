@@ -84,6 +84,42 @@ clapoff --list-devices     # every mic your machine admits to having
 clapoff --device 3         # use that one instead
 ```
 
+## Not falling for your own speakers
+
+The detector cannot tell a hi-hat from a clap, because acoustically there is barely a
+difference. So rather than get cleverer about that, clapoff cheats: it also listens to
+what your computer is *playing*. If the speakers popped 200 ms ago, the microphone is
+about to hear that pop, and it doesn't count.
+
+```bash
+pip install "clapoff[loopback]"     # pulls in soundcard
+clapoff                             # on by default when it's available
+clapoff --loopback off              # if you'd rather it didn't
+```
+
+The header tells you whether it's actually running, because a safety feature that
+silently isn't there is worse than no safety feature:
+
+```
+  speakers: watching "Speakers (Realtek Audio)"
+  speakers: off - soundcard not installed (pip install 'clapoff[loopback]')
+```
+
+This is **not** acoustic echo cancellation. There's no adaptive filter and nothing is
+subtracted. We aren't removing your speakers from the signal, just recognising their
+handwriting. It's about sixty lines.
+
+| Platform | How | Works? |
+| --- | --- | --- |
+| Windows | WASAPI loopback | ✅ |
+| Linux | PulseAudio monitor source | ✅ |
+| macOS | needs [BlackHole](https://github.com/ExistentialAudio/BlackHole) or similar | ⚠️ BYO loopback device |
+
+Fair warning: plenty of laptop microphone arrays already run echo cancellation in the
+driver and strip speaker audio before it ever reaches us. If your machine does that,
+this feature will look like it's doing nothing, because there's nothing left to do.
+It earns its keep on desktops and external mics, which don't get that for free.
+
 ## Does it actually work
 
 There is a test suite. It feeds synthetic audio through the detector, so it runs on
@@ -146,10 +182,9 @@ still works. Choose your countdown accordingly.
 ## FAQ
 
 **Will this shut down my PC during a drum solo?**
-Maybe! A hi-hat is, acoustically, a clap with better time. Three of them inside two
-seconds is a legitimate trigger and the detector cannot tell the difference, because
-there isn't one. That's what the fifteen seconds of beeping are for. Raise `--claps`
-if you listen to a lot of funk.
+Not if the music is coming out of your own speakers - see above, it watches those and
+vetoes anything they were responsible for. If the drum solo is happening *in the room*,
+then yes, absolutely, and you have bigger scheduling problems than this program.
 
 **Is it always listening to me?**
 Yes, and it is deeply unimpressed. Nothing is recorded, stored, or transmitted. Audio
