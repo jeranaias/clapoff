@@ -382,11 +382,14 @@ then yes, absolutely, and you have bigger scheduling problems than this program.
 
 **Is it always listening to me?**
 Yes, and it is deeply unimpressed. Nothing is recorded, stored, or transmitted. Audio
-goes into a 16 ms buffer, becomes one number, and is overwritten forever. The code is
-about 200 lines and you can read all of it in less time than this FAQ.
+goes into a 16 ms buffer, becomes one number, and is overwritten forever. It never
+touches the disk and never touches the network. About 1,500 lines, and the part that
+handles your audio is one file you can read in a sitting: `detector.py`.
 
 **Can I make it do something other than shut down?**
-Edit `power.py`. It's four lines and one of them is a comment.
+That's what the pattern file is for — `clapoff --init-config`, then point a rhythm at
+`"action": "command"` and any shell string you like. No editing the source required,
+which was not true a few versions ago.
 
 **It fires when my cat walks past.**
 Lower `--sensitivity`. Or get a quieter cat. The `spike Nx` number in each log line is
