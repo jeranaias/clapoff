@@ -695,3 +695,145 @@ class TestTray:
     def test_status_explains_itself(self):
         from clapoff.tray import Tray
         assert "off - " in Tray(enabled=False).status()
+
+
+# --- microphones that refuse 16 kHz ------------------------------------------
+
+class TestResample:
+    """Found the hard way: WASAPI rejects 16 kHz outright with PaErrorCode -9997."""
+
+    def test_it_returns_the_length_asked_for(self):
+        from clapoff.audio import resample
+        for n_in in (768, 512, 256, 128):
+            assert resample(np.zeros((n_in, 1), dtype=np.float32), 256).shape == (256, 1)
+
+    def test_a_matching_length_is_left_alone(self):
+        from clapoff.audio import resample
+        x = np.random.default_rng(0).normal(0, 1, (256, 1)).astype(np.float32)
+        assert np.array_equal(resample(x, 256), x)
+
+    def test_channels_survive(self):
+        from clapoff.audio import resample
+        assert resample(np.zeros((768, 4), dtype=np.float32), 256).shape == (256, 4)
+
+    def test_mono_input_gets_a_channel_axis(self):
+        from clapoff.audio import resample
+        assert resample(np.zeros(768, dtype=np.float32), 256).shape == (256, 1)
+
+    def test_a_tone_keeps_its_pitch(self):
+        """48k -> 16k: a 1 kHz tone must still be a 1 kHz tone afterwards."""
+        from clapoff.audio import resample
+        t = np.arange(4800) / 48000.0
+        tone = np.sin(2 * np.pi * 1000 * t).astype(np.float32)
+        out = resample(tone, 1600)[:, 0]
+        spectrum = np.abs(np.fft.rfft(out * np.hanning(len(out))))
+        peak_hz = np.fft.rfftfreq(len(out), 1 / 16000)[int(np.argmax(spectrum))]
+        assert abs(peak_hz - 1000) < 25
+
+    def test_downsampling_does_not_alias_a_high_tone_into_the_band(self):
+        """A 7 kHz tone at 48k has nowhere to go at 16k. It must not reappear low."""
+        from clapoff.audio import resample
+        t = np.arange(4800) / 48000.0
+        tone = np.sin(2 * np.pi * 7000 * t).astype(np.float32)
+        out = resample(tone, 1600)[:, 0]
+        spectrum = np.abs(np.fft.rfft(out * np.hanning(len(out))))
+        freqs = np.fft.rfftfreq(len(out), 1 / 16000)
+        low = spectrum[(freqs > 200) & (freqs < 3000)].max()
+        assert low < 0.25 * spectrum.max() + 1e-6
+
+
+class TestInputFallback:
+    class FakeStream:
+        def __init__(self, rate, block, fail_at=None):
+            if fail_at is not None and rate == fail_at:
+                raise RuntimeError("Invalid sample rate [PaErrorCode -9997]")
+            self.rate, self.block = rate, block
+
+        def start(self): pass
+        def stop(self): pass
+        def close(self): pass
+
+        def read(self, n):
+            return np.zeros((n, 1), dtype=np.float32), False
+
+    def _sd(self, fail_at=None, default_rate=48000.0):
+        import types
+        mod = types.SimpleNamespace()
+        mod.InputStream = lambda samplerate, blocksize, channels, dtype, device: \
+            TestInputFallback.FakeStream(samplerate, blocksize, fail_at)
+        mod.query_devices = lambda *a, **k: {"default_samplerate": default_rate}
+        mod.default = types.SimpleNamespace(device=(0, 1))
+        return mod
+
+    def test_it_uses_16k_when_the_device_allows_it(self):
+        from clapoff.audio import Input
+        with Input(self._sd(), None, 1) as stream:
+            assert stream.resampling is False
+            assert stream.rate == 16000
+            assert stream.read()[0].shape[0] == 256
+
+    def test_it_falls_back_to_the_device_rate_and_resamples(self):
+        from clapoff.audio import Input
+        with Input(self._sd(fail_at=16000), None, 1) as stream:
+            assert stream.resampling is True
+            assert stream.rate == 48000
+            assert stream.native_block == 768          # 256 * 48000/16000
+            assert stream.read()[0].shape[0] == 256    # caller still sees 256
+            assert "resampled" in stream.describe()
+
+
+# --- remembering what you chose in the window --------------------------------
+
+class TestSettings:
+    def test_defaults_when_nothing_was_ever_saved(self, tmp_path):
+        from clapoff import settings
+        values = settings.load(tmp_path / "absent.json")
+        assert values == settings.DEFAULTS
+
+    def test_save_then_load_round_trips(self, tmp_path):
+        from clapoff import settings
+        path = tmp_path / "s.json"
+        settings.save({"countdown": 7.0, "tray": True, "device": 3}, path)
+        values = settings.load(path)
+        assert values["countdown"] == 7.0
+        assert values["tray"] is True
+        assert values["device"] == 3
+
+    def test_unknown_keys_are_not_smuggled_in(self, tmp_path):
+        from clapoff import settings
+        path = tmp_path / "s.json"
+        settings.save({"countdown": 5.0, "launch_missiles": True}, path)
+        assert "launch_missiles" not in settings.load(path)
+
+    def test_a_corrupt_file_does_not_stop_the_app_starting(self, tmp_path):
+        from clapoff import settings
+        bad = tmp_path / "bad.json"
+        bad.write_text("{{{ not json", encoding="utf-8")
+        assert settings.load(bad) == settings.DEFAULTS
+
+    def test_a_partial_file_keeps_the_defaults_for_the_rest(self, tmp_path):
+        from clapoff import settings
+        path = tmp_path / "s.json"
+        path.write_text('{"countdown": 3}', encoding="utf-8")
+        values = settings.load(path)
+        assert values["countdown"] == 3
+        assert values["guards"] == settings.DEFAULTS["guards"]
+
+
+class TestSetupWindowWrites:
+    def test_chosen_rhythms_come_back_out_of_the_pattern_loader(self, tmp_path):
+        """What the window writes, the command line has to be able to read."""
+        from clapoff.gui import write_patterns
+        from clapoff.patterns import Pattern, load
+        path = tmp_path / "patterns.json"
+        write_patterns([Pattern("shutdown", [1, 1], "shutdown"),
+                        Pattern("lock", [2, 1], "lock")], path)
+        patterns, source = load(path)
+        assert [p.name for p in patterns] == ["shutdown", "lock"]
+        assert patterns[0].rhythm == [1.0, 1.0]
+        assert patterns[1].action == "lock"
+        assert source == str(path)
+
+    def test_device_aliases_are_kept_out_of_the_picker(self):
+        from clapoff.gui import ALIASES
+        assert "sound mapper" in ALIASES

@@ -10,6 +10,7 @@ import numpy as np
 
 from . import __version__
 from .console import beep, drain_keys, key_pressed, say
+from .audio import Input
 from .detector import BLOCK, SR, ClapDetector
 from .doa import DirectionGate, array_report, signature
 from . import guards
@@ -18,7 +19,7 @@ from .notify import Notifier
 from .tray import Tray
 from .patterns import DEFAULT_TOLERANCE, Pattern, load, match_sequence, write_starter
 from .power import perform
-from . import training
+from . import settings, training
 
 BANNER = r"""
        _
@@ -30,7 +31,8 @@ BANNER = r"""
 """
 
 
-def build_parser():
+def build_parser(saved=None):
+    saved = saved if saved is not None else settings.DEFAULTS
     p = argparse.ArgumentParser(
         prog="clapoff",
         description="Turn off your computer by clapping at it. And other rhythms.",
@@ -43,11 +45,11 @@ def build_parser():
                    help="longest rhythm to keep in mind, in seconds (default: 3.0)")
     p.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE,
                    help="how sloppy your timing may be, 0-1 (default: 0.30)")
-    p.add_argument("--countdown", type=float, default=15.0,
+    p.add_argument("--countdown", type=float, default=saved["countdown"],
                    help="seconds to change your mind (default: 15)")
-    p.add_argument("--sensitivity", type=float, default=1.0,
+    p.add_argument("--sensitivity", type=float, default=saved["sensitivity"],
                    help="higher hears more, lower hears less (default: 1.0)")
-    p.add_argument("--device", default=None,
+    p.add_argument("--device", default=saved["device"],
                    help="input device index or name; omit for the system default")
     p.add_argument("--config", default=None, help="path to a patterns file")
     p.add_argument("--train", action="store_true",
@@ -67,7 +69,7 @@ def build_parser():
                    help="write a starter pattern file you can edit")
     p.add_argument("--list-devices", action="store_true",
                    help="print every microphone this machine admits to having")
-    p.add_argument("--loopback", choices=["auto", "off"], default="auto",
+    p.add_argument("--loopback", choices=["auto", "off"], default=saved["loopback"],
                    help="watch your own speakers so music cannot trigger it (default: auto)")
     p.add_argument("--loopback-device", default=None,
                    help="name of the output device to watch; omit for the default speaker")
@@ -75,12 +77,14 @@ def build_parser():
                    help="report rhythms and do absolutely nothing about them")
     p.add_argument("--dry-run", action="store_true",
                    help="the whole show, including the countdown, minus the ending")
-    p.add_argument("--guards", choices=["auto", "off"], default="auto",
+    p.add_argument("--guards", choices=["auto", "off"], default=saved["guards"],
                    help="refuse to end your session mid-call or mid-game (default: auto)")
-    p.add_argument("--notify", choices=["auto", "off"], default="auto",
+    p.add_argument("--notify", choices=["auto", "off"], default=saved["notify"],
                    help="put the countdown on the desktop too (default: auto)")
-    p.add_argument("--tray", action="store_true",
+    p.add_argument("--tray", action="store_true", default=saved["tray"],
                    help="show a tray icon you can pause and quit from")
+    p.add_argument("--setup", action="store_true",
+                   help="open the setup window instead of all of this")
     p.add_argument("--no-banner", action="store_true", help="be boring")
     p.add_argument("--version", action="version", version=f"clapoff {__version__}")
     return p
@@ -106,8 +110,9 @@ def print_patterns(patterns, source):
 
 
 def open_mic(sd, device, channels=1):
-    return sd.InputStream(samplerate=SR, blocksize=BLOCK, channels=channels,
-                          dtype="float32", device=device)
+    # Not sd.InputStream directly: plenty of devices refuse 16 kHz outright, so
+    # this opens at whatever they will accept and resamples on the way in.
+    return Input(sd, device, channels)
 
 
 def channel_count(sd, device):
@@ -217,7 +222,11 @@ def run_training(args, sd, device):
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    args = build_parser(settings.load()).parse_args(argv)
+
+    if args.setup:
+        from .gui import run_setup
+        return run_setup()
 
     if args.init_config:
         path = write_starter(args.config)
@@ -258,15 +267,17 @@ def main(argv=None):
         learned, profile_note = None, "ignored with --no-profile"
     else:
         learned, profile_note = training.load(args.profile)
-    settings = dict(learned or {})
+    # Named 'tuning', not 'settings': there is a settings module in scope and
+    # shadowing it makes build_parser(settings.load()) above fail at runtime.
+    tuning = dict(learned or {})
     # An explicit --tolerance beats a learned one; otherwise the learned one wins.
-    tolerance = settings.pop("tolerance", args.tolerance)
+    tolerance = tuning.pop("tolerance", args.tolerance)
     if args.tolerance != DEFAULT_TOLERANCE:
         tolerance = args.tolerance
-    gate = DirectionGate(settings.pop("direction", None), args.direction_tolerance)
+    gate = DirectionGate(tuning.pop("direction", None), args.direction_tolerance)
     channels = channel_count(sd, device) if gate.active else 1
 
-    det = ClapDetector(sensitivity=args.sensitivity, **settings)
+    det = ClapDetector(sensitivity=args.sensitivity, **tuning)
     notifier = Notifier(enabled=args.notify == "auto" and not args.listen)
     tray = Tray(enabled=args.tray)
     tray.start()

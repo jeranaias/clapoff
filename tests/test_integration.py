@@ -59,6 +59,17 @@ class FakeStream:
         self.i = 0
         self.clock = clock
 
+    # The same surface a real sounddevice stream has, because clapoff.audio.Input
+    # wraps one: start it, read from it, stop and close it.
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def close(self):
+        pass
+
     def __enter__(self):
         return self
 
@@ -78,7 +89,8 @@ class FakeStream:
 def fake_sounddevice(signal, clock):
     mod = types.ModuleType("sounddevice")
     mod.InputStream = lambda **kw: FakeStream(signal, clock)
-    mod.query_devices = lambda *a, **k: {"name": "Fake Mic", "max_input_channels": 1}
+    mod.query_devices = lambda *a, **k: {"name": "Fake Mic", "max_input_channels": 1,
+                                         "default_samplerate": 16000.0}
     mod.default = types.SimpleNamespace(device=(0, 1))
     return mod
 
