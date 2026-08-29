@@ -8,3 +8,7 @@ dist/
 venv/
 .env
 .DS_Store
+
+# PyInstaller leftovers
+*.spec
+build/

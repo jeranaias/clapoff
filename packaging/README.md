@@ -9,7 +9,8 @@ the rest. Nothing in here pretends to work before it does.
 | GitHub Releases (wheel + sdist) | **ready** | push a `v*` tag; `release.yml` builds and attaches them |
 | PyPI | **ready, unpublished** | a trusted publisher for `jeranaias/clapoff` on PyPI, then a tag |
 | Homebrew | **blocked on PyPI** | see `clapoff.rb` — the resource stanzas can't be generated until an sdist exists |
-| winget | **not started** | winget wants a real `.exe`/`.msi` installer; a Python CLI isn't one. Would need PyInstaller plus an installer build. Deliberately not faked. |
+| **`clapoff.exe`** (Windows, no Python) | **works today** | push a `v*` tag; `release.yml` builds it with PyInstaller and attaches it |
+| winget | **plausible now** | winget wants a stable download URL and a hash. Once a tagged release exists, `clapoff.exe` is exactly that. Still needs a manifest PR to microsoft/winget-pkgs. |
 
 ## Cutting a release
 
@@ -17,9 +18,13 @@ the rest. Nothing in here pretends to work before it does.
 git tag v0.1.0 && git push --tags
 ```
 
-That builds the wheel and sdist, attaches both to a GitHub release, and — once the
-PyPI trusted publisher exists — publishes. Until then the `pypi` job is the only one
-that fails and the release still goes out.
+That builds the wheel and sdist, builds `clapoff.exe` on a Windows runner, attaches
+all three to a GitHub release, and — once the PyPI trusted publisher exists —
+publishes. Until then the `pypi` job is the only one that fails and the release still
+goes out.
+
+The exe is about 37 MB, which is mostly numpy and Python itself. That is the price of
+"no install step" and it seems like a fair trade.
 
 ## Homebrew
 

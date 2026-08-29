@@ -837,3 +837,36 @@ class TestSetupWindowWrites:
     def test_device_aliases_are_kept_out_of_the_picker(self):
         from clapoff.gui import ALIASES
         assert "sound mapper" in ALIASES
+
+
+# --- the double-clickable front door -----------------------------------------
+
+class TestAppEntry:
+    """What clapoff.exe does when someone who has never read a flag runs it."""
+
+    def test_arguments_go_straight_to_the_command_line(self, monkeypatch):
+        from clapoff import app
+        seen = []
+        monkeypatch.setattr(app, "cli_main", lambda argv: seen.append(argv) or 0)
+        app.main(["--listen"])
+        assert seen == [["--listen"]]
+
+    def test_no_arguments_and_no_config_opens_the_window(self, monkeypatch):
+        import sys
+        import types
+        from clapoff import app
+        opened = []
+        monkeypatch.setattr(app, "configured", lambda: False)
+        fake = types.ModuleType("clapoff.gui")
+        fake.run_setup = lambda: opened.append(True) or 0
+        monkeypatch.setitem(sys.modules, "clapoff.gui", fake)
+        assert app.main([]) == 0
+        assert opened == [True]
+
+    def test_no_arguments_once_configured_just_starts_listening(self, monkeypatch):
+        from clapoff import app
+        seen = []
+        monkeypatch.setattr(app, "configured", lambda: True)
+        monkeypatch.setattr(app, "cli_main", lambda argv: seen.append(argv) or 0)
+        app.main([])
+        assert seen == [["--no-banner", "--tray"]]

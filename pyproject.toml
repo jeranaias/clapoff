@@ -37,6 +37,7 @@ Issues = "https://github.com/jeranaias/clapoff/issues"
 
 [project.scripts]
 clapoff = "clapoff.cli:main"
+clapoff-setup = "clapoff.gui:run_setup"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/clapoff"]
