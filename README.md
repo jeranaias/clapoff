@@ -10,7 +10,8 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg">
   <img alt="Python" src="https://img.shields.io/badge/python-3.9%2B-blue.svg">
   <img alt="Platforms" src="https://img.shields.io/badge/platform-windows%20%7C%20macos%20%7C%20linux-lightgrey.svg">
-  <img alt="Works on my machine" src="https://img.shields.io/badge/works%20on-my%20machine-success.svg">
+  <img alt="Works on my machine" src="https://img.shields.io/badge/works%20on-my%20machine-success.svg"><br>
+  <a href="https://github.com/jeranaias/clapoff/releases/latest"><img alt="Download for Windows" src="https://img.shields.io/badge/download-clapoff.exe%20for%20Windows-e0703f?style=for-the-badge"></a>
 </p>
 
 ---
@@ -19,7 +20,60 @@
 
 The power button is four feet away and I am not an animal.
 
-## What it looks like
+## Get it
+
+**Windows, no Python, no terminal, no pip:**
+
+### ⬇ [Download clapoff.exe](https://github.com/jeranaias/clapoff/releases/latest)
+
+Double-click it. A setup window opens and asks you four things. That's the install.
+
+<sub>About 37 MB, because Python and numpy come along for the ride. First launch takes
+a few seconds while it unpacks itself, then it's quick. No tagged release exists yet —
+until one does, use pip below.</sub>
+
+## Setting it up
+
+Four questions and a Start button. Nobody should have to learn a flag to clap at a
+computer.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/01-welcome.png" alt="Welcome screen"></td>
+<td width="50%"><img src="docs/screenshots/02-microphone.png" alt="Microphone picker with live meter"></td>
+</tr>
+<tr>
+<td><b>1. Hello.</b> Nothing is recorded, stored or sent anywhere. Audio becomes one
+number and is thrown away immediately.</td>
+<td><b>2. Which ears?</b> Pick a microphone and watch the bar move. Every mic is listed
+once, not once per audio API.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/03-clap-test.png" alt="Clap test with three dots"></td>
+<td><img src="docs/screenshots/04-actions.png" alt="Choosing what each rhythm does"></td>
+</tr>
+<tr>
+<td><b>3. Clap three times.</b> The dots fill in. If it can't hear you, there's a
+slider right there.</td>
+<td><b>4. What should it do?</b> Each rhythm gets its own action. Leave any of them on
+"nothing".</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/05-safety.png" alt="Countdown and safety switches"></td>
+<td><img src="docs/screenshots/06-finish.png" alt="Summary and start"></td>
+</tr>
+<tr>
+<td><b>5. Second thoughts.</b> How long you get to change your mind, and when it should
+refuse outright.</td>
+<td><b>6. Done.</b> Tick the box and it starts with you from now on.</td>
+</tr>
+</table>
+
+Everything in that window is also a command-line flag, and your answers are saved where
+the command line reads them — so plain `clapoff` afterwards does exactly what you set
+up. Run `clapoff --setup` any time to change your mind.
+
+## What it looks like running
 
 ```
        _
@@ -49,10 +103,12 @@ The power button is four feet away and I am not an animal.
 [14:32:10]   ...13
 ```
 
-## Install
+## Install it properly (macOS, Linux, or if you like flags)
 
 ```bash
 pip install git+https://github.com/jeranaias/clapoff
+clapoff --setup      # the same window, if you have a desktop
+clapoff              # or skip it entirely and use flags
 ```
 
 Not on PyPI yet — the release machinery is built and waiting on a trusted publisher,
@@ -341,8 +397,10 @@ quit without going through Task Manager.
 
 Because a clap detector that isn't running is just a folder.
 
-**Windows** — registers a hidden logon task:
+**Windows** — the setup window does this for you if you tick the box on the last
+screen. By hand, either of these works:
 ```powershell
+clapoff --setup                                                   # tick "start when I log in"
 powershell -ExecutionPolicy Bypass -File scripts/install-autostart.ps1
 ```
 
@@ -410,7 +468,10 @@ python -m clapoff.cli --listen
 ```
 
 **How do I uninstall it?**
-`pip uninstall clapoff`. You will have to type that. With your hands. The same hands.
+If you downloaded the exe: untick autostart in the setup window (or delete the
+`clapoff` entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`), then
+delete the file. If you used pip: `pip uninstall clapoff`. Either way you will have to
+do it with your hands. The same hands.
 
 ## License
 
