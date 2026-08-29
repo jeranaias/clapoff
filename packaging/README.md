@@ -6,10 +6,10 @@ the rest. Nothing in here pretends to work before it does.
 | Channel | Status | What's needed |
 | --- | --- | --- |
 | `pip install git+https://github.com/jeranaias/clapoff` | **works today** | nothing |
-| GitHub Releases (wheel + sdist) | **ready** | push a `v*` tag; `release.yml` builds and attaches them |
+| GitHub Releases (wheel + sdist) | **shipped in v0.1.0** | nothing |
 | PyPI | **ready, unpublished** | a trusted publisher for `jeranaias/clapoff` on PyPI, then a tag |
 | Homebrew | **blocked on PyPI** | see `clapoff.rb` — the resource stanzas can't be generated until an sdist exists |
-| **`clapoff.exe`** (Windows, no Python) | **works today** | push a `v*` tag; `release.yml` builds it with PyInstaller and attaches it |
+| **`clapoff.exe`** (Windows, no Python) | **shipped in v0.1.0** | nothing |
 | winget | **plausible now** | winget wants a stable download URL and a hash. Once a tagged release exists, `clapoff.exe` is exactly that. Still needs a manifest PR to microsoft/winget-pkgs. |
 
 ## Cutting a release

@@ -28,9 +28,11 @@ The power button is four feet away and I am not an animal.
 
 Double-click it. A setup window opens and asks you four things. That's the install.
 
-<sub>About 37 MB, because Python and numpy come along for the ride. First launch takes
-a few seconds while it unpacks itself, then it's quick. No tagged release exists yet —
-until one does, use pip below.</sub>
+<sub>About 33 MB, because Python and numpy come along for the ride. First launch takes
+a few seconds while it unpacks itself, then it's quick. Windows will warn you that it's
+from an unknown publisher, because it is — the binary is built in the open by
+<a href="https://github.com/jeranaias/clapoff/actions/workflows/release.yml">this workflow</a>,
+from this source, and signing it costs more than this joke is worth.</sub>
 
 ## Setting it up
 
