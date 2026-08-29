@@ -62,6 +62,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
+    # No trusted publisher exists yet. Until one does this step cannot work, and
+    # a red cross on every release for a known, documented reason just teaches
+    # people to ignore red crosses.
+    continue-on-error: true
     steps:
       - uses: actions/download-artifact@v4
         with:
